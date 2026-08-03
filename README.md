@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Python-based secuirty log analysis designed to process authentication records and identify unusual login activity by username and IP address.
+A Python-based security log analysis designed to process authentication records and identify unusual login activity by username and IP address.
 
 ## Prerequesites 
 
