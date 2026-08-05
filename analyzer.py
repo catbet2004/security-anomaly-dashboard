@@ -101,6 +101,18 @@ def anom_score(ip_sum: pd.DataFrame)-> pd.DataFrame:
           score["suspicious"]=(
                score["anomaly_score"]>=1.5
           )
+          assign_risk=[
+               score["anomaly_score"]>=2.0,
+               score["anomaly_score"]>=1.5,
+          ]
+          risky_lvls=["High","Medium"]
+
+          score["risk_level"]=np.select(
+               assign_risk,
+               risky_lvls,
+               default="Low",
+          )
+
           score=score.sort_values(
                by="anomaly_score",
                ascending=False,
