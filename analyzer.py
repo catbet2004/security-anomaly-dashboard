@@ -39,7 +39,10 @@ def clean_logs(logs:pd.DataFrame)-> pd.DataFrame:
      clean["username"]=(clean["username"].astype(str).str.strip().str.lower())
      clean["ip_address"]=(clean["ip_address"].astype(str).str.strip())
      clean["status"]=(clean["status"].astype(str).str.strip().str.lower())
+     clean["timestamp"]=(clean["timestamp"].astype("string").str.strip())
      clean["timestamp"]=pd.to_datetime(clean["timestamp"], errors="coerce") #invalid changed to NaT
+
+     clean=clean.replace("",pd.NA) #empty strings into missing vals
 
      clean=clean.dropna(subset=[
           "timestamp", "username", "ip_address", "status"
@@ -60,23 +63,27 @@ def ip_activity(logs:pd.DataFrame)->pd.DataFrame:
           analysis["status"]=="failed"
      ).astype(int)
 
+     #mark login attempts during sus times
+     analysis["date"]=analysis["timestamp"].dt.date
+     analysis["hour"]=analysis["timestamp"].dt.hour
+
+     
+     analysis["off_hours"]=((analysis["hour"]<6)|(analysis["hour"]>=22).astype(int)
+
+     )
+
      ip_sum= (
-          analysis.groupby("ip_address",as_index=False).agg(
+          analysis.groupby(["ip_address","date"],as_index=False).agg(
                total_attempts=("status", "size"),
                failed_attempts=("failed", "sum"),
                unique_users=("username","nunique"),
+               off_time_attempts=("off_hours", "sum"),
           )
      )
      ip_sum["failure_rate"]=(
-          ip_sum["failed_attempts"]/ip_sum["total_attempts"]
+          ip_sum["failed_attempts"]/ip_sum["total_attempts"]*100
      )
-     ip_sum["failure_rate"]=(ip_sum["failure_rate"]*100).round(1)
-
-     ip_sum=ip_sum.sort_values(
-          by="failed_attempts",
-          ascending=False,
-     )
-
+     
      return ip_sum
 
 def anom_score(ip_sum: pd.DataFrame)-> pd.DataFrame:
@@ -84,6 +91,7 @@ def anom_score(ip_sum: pd.DataFrame)-> pd.DataFrame:
      if score.empty:
           score["anomaly_score"]=pd.Series(dtype=float)
           score["suspicious"]=pd.Series(dtype=bool)
+          score["risk_level"]=pd.Series(dtype="string")
           return score
 
      failures=score["failed_attempts"].to_numpy(dtype=float)
@@ -135,14 +143,15 @@ def main()-> None:
     print ("Original data:")
     print(logs)
 
-    print("\nCleaned data:")
-    print(cleaned_logs)
-
     print("\nNumber of valid records:")
     print(len(cleaned_logs))
 
+    print("\nCleaned data:")
+    print(cleaned_logs)
+
     print("\nColumn data types:")
-    print(cleaned_logs.dtypes)
+    for column, data_type in cleaned_logs.dtypes.items():
+         print (f"{column}: {data_type}")
 
     print("\nIP address summary:")
     print(ip_sum)
