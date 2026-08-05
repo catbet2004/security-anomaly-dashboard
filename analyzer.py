@@ -51,13 +51,71 @@ def clean_logs(logs:pd.DataFrame)-> pd.DataFrame:
 
      return clean
 
+#summarize IP login activity 
+def ip_activity(logs:pd.DataFrame)->pd.DataFrame:
 
-     
+     analysis=logs.copy()
+
+     analysis["failed"]=(
+          analysis["status"]=="failed"
+     ).astype(int)
+
+     ip_sum= (
+          analysis.groupby("ip_address",as_index=False).agg(
+               total_attempts=("status", "size"),
+               failed_attempts=("failed", "sum"),
+               unique_users=("username","nunique"),
+          )
+     )
+     ip_sum["failure_rate"]=(
+          ip_sum["failed_attempts"]/ip_sum["total_attempts"]
+     )
+     ip_sum["failure_rate"]=(ip_sum["failure_rate"]*100).round(1)
+
+     ip_sum=ip_sum.sort_values(
+          by="failed_attempts",
+          ascending=False,
+     )
+
+     return ip_sum
+
+def anom_score(ip_sum: pd.DataFrame)-> pd.DataFrame:
+     score=ip_sum.copy()
+     if score.empty:
+          score["anomaly_score"]=pd.Series(dtype=float)
+          score["suspicious"]=pd.Series(dtype=bool)
+          return score
+
+     failures=score["failed_attempts"].to_numpy(dtype=float)
+
+     avg_failures=np.mean(failures)
+     failure_std=np.std(failures)
+
+     if failure_std == 0:
+          score["anomaly_score"]=0.0
+     else:
+          score["anomaly_score"]=(
+               score["failed_attempts"]-avg_failures
+          ) / failure_std
+
+          score["suspicious"]=(
+               score["anomaly_score"]>=1.5
+          )
+          score=score.sort_values(
+               by="anomaly_score",
+               ascending=False,
+
+          ).reset_index(drop=True)
+
+          return score
+
 
 def main()-> None:
     try:
           logs=load_logs("some_logs.csv")
           cleaned_logs=clean_logs(logs)
+          ip_sum=ip_activity(cleaned_logs)
+          score_ips=anom_score(ip_sum)
     except ValueError as error:
          print(f"Error: {error}")
          return
@@ -73,6 +131,14 @@ def main()-> None:
 
     print("\nColumn data types:")
     print(cleaned_logs.dtypes)
+
+    print("\nIP address summary:")
+    print(ip_sum)
+
+    print("\nAnomaly results:")
+    print(score_ips)
+
+
 
 if __name__=="__main__":
      main()
