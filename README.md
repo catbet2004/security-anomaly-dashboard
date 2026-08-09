@@ -14,7 +14,15 @@ pip install pandas numpy streamlit
 ```
 ## Usage 
 
-Place a CSV file in the project folder with required columns (for now):
+Now uses a Syslog listener to receive authenication logs from authorized devices 
+on the network.
+
+Supported authentication logs:
+
+- Failed SSH logins
+- Successful SSH logins
+
+The logs covert to the following format for analysis:
 
 - timestamp
 - username

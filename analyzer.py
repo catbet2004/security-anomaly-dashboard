@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
-import streamlit as st
+
+from net_logs import collect_net_logs
 
 REQUIRED_COLUMNS={
     "timestamp","username","ip_address","status"
@@ -66,11 +67,7 @@ def ip_activity(logs:pd.DataFrame)->pd.DataFrame:
      #mark login attempts during sus times
      analysis["date"]=analysis["timestamp"].dt.date
      analysis["hour"]=analysis["timestamp"].dt.hour
-
-     
-     analysis["off_hours"]=((analysis["hour"]<6)|(analysis["hour"]>=22).astype(int)
-
-     )
+     analysis["off_hours"]=((analysis["hour"]<6)|(analysis["hour"]>=22).astype(int))
 
      ip_sum= (
           analysis.groupby(["ip_address","date"],as_index=False).agg(
@@ -82,7 +79,7 @@ def ip_activity(logs:pd.DataFrame)->pd.DataFrame:
      )
      ip_sum["failure_rate"]=(
           ip_sum["failed_attempts"]/ip_sum["total_attempts"]*100
-     )
+     ).round(1)
      
      return ip_sum
 
@@ -131,33 +128,37 @@ def anom_score(ip_sum: pd.DataFrame)-> pd.DataFrame:
 
 
 def main()-> None:
-    try:
-          logs=load_logs("some_logs.csv")
+
+     logs=collect_net_logs()
+     if logs.empty:
+          print("\nNo supported authentication events were collected.")
+          return
+     try:
           cleaned_logs=clean_logs(logs)
           ip_sum=ip_activity(cleaned_logs)
           score_ips=anom_score(ip_sum)
-    except ValueError as error:
+     except ValueError as error:
          print(f"Error: {error}")
          return
 
-    print ("Original data:")
-    print(logs)
+     print ("Original data:")
+     print(logs)
 
-    print("\nNumber of valid records:")
-    print(len(cleaned_logs))
+     print("\nNumber of valid records:")
+     print(len(cleaned_logs))
 
-    print("\nCleaned data:")
-    print(cleaned_logs)
+     print("\nCleaned data:")
+     print(cleaned_logs)
 
-    print("\nColumn data types:")
-    for column, data_type in cleaned_logs.dtypes.items():
+     print("\nColumn data types:")
+     for column, data_type in cleaned_logs.dtypes.items():
          print (f"{column}: {data_type}")
 
-    print("\nIP address summary:")
-    print(ip_sum)
+     print("\nIP address summary:")
+     print(ip_sum)
 
-    print("\nAnomaly results:")
-    print(score_ips)
+     print("\nAnomaly results:")
+     print(score_ips)
 
 
 
