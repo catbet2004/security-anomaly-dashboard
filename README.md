@@ -31,6 +31,4 @@ The logs covert to the following format for analysis:
 
 ## Note
 
-Yes, some_logs.csv is in the code but it is a csv file I am testing personally for the specfic project and will not be included.
-
 Project is still under development rn... 
