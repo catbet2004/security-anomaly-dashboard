@@ -1,5 +1,6 @@
 import re
-import socket 
+import socket
+import threading
 from datetime import datetime
 import pandas as pd
 
@@ -39,44 +40,69 @@ def auth_log(message:str,ip_add:str)->dict | None:
     return None
 
 #network listener and collects events
-def collect_net_logs()->pd.DataFrame:
-    logins=[]
-    net_sock=socket.socket(
-        socket.AF_INET, #IPv4 addresses
-        socket.SOCK_DGRAM, #use UDP
-    )
-    net_sock.bind((HOST,PORT))
-    print(f"Listening for authentication logs on UDP port {PORT}...")
-    print("Press Control+C to stop.\n")
-
-    try:
-        while True:
-            data, address=net_sock.recvfrom(65535)#max amount of data
-
-            ip_add=address[0]
-            message=data.decode("utf-8",errors="replace",
-    )
-            print(f"Log received from {ip_add}:")
-            print(message)
-
-            parse_check=auth_log(message, ip_add,
-
+class SyslogCollector:
+    def __init__(self):
+        self.logins=[]
+        self.lock=threading.Lock()
+        self.running=False
+        self.net_sock=socket.socket(
+            socket.AF_INET, #IPv4 address
+            socket.SOCK_DGRAM, #use UDP 
         )
 
-            if parse_check is not None:
-                logins.append(parse_check)
-                print("Authentication event recorded.\n")
+        self.net_sock.settimeout(1.0)
 
-            else:
-                print("Log received but not a supported authentication event.\n")
+        self.net_sock.bind((HOST,PORT))
 
-    except KeyboardInterrupt:
-        print("\nStopping live log collection...")
+    def start(self):
+        if self.running:
+            return
+        self.running=True
+        listener=threading.Thread(
+            target=self.listen,
+            daemon=True
+        )
+        listener.start()
+    def listen(self):
+        print(f"Listening for authentication logs on UDP port {PORT}")
 
-    finally:
-        net_sock.close()
+        while self.running:
+            try:
+                data,address=self.net_sock.recvfrom(65535)
+                ip_add=address[0]
+                message=data.decode("utf-8", errors="replace")
+                print(f"Log received from {ip_add}:")
+                print(message)
 
-    return pd.DataFrame(logins)
+                message_support=auth_log(message,ip_add)
+
+                if message_support is not None:
+                    with self.lock:
+                        self.logins.append(message_support)
+                        print("Authentication event recorded.\n")
+                else:
+                    print("Log received but not a supported authentication event.\n")
+
+            except socket.timeout:
+                continue
+
+            except OSError:
+                break
+
+    def get_logs(self)->pd.DataFrame:
+        with self.lock:
+            log_copy=self.logins.copy()
+
+        return pd.DataFrame(log_copy)
+    
+    def stop(self):
+        self.running=False
+        self.net_sock.close()
+
+
+
+
+        
 
 
 

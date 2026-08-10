@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 
-from net_logs import collect_net_logs
 
 REQUIRED_COLUMNS={
     "timestamp","username","ip_address","status"
@@ -103,67 +102,29 @@ def anom_score(ip_sum: pd.DataFrame)-> pd.DataFrame:
                score["failed_attempts"]-avg_failures
           ) / failure_std
 
-          score["suspicious"]=(
-               score["anomaly_score"]>=1.5
-          )
-          assign_risk=[
-               score["anomaly_score"]>=2.0,
-               score["anomaly_score"]>=1.5,
-          ]
-          risky_lvls=["High","Medium"]
+     score["suspicious"]=(
+          score["anomaly_score"]>=1.5
+     )
+     assign_risk=[
+          score["anomaly_score"]>=2.0,
+          score["anomaly_score"]>=1.5,
+     ]
+     risky_lvls=["High","Medium"]
 
-          score["risk_level"]=np.select(
-               assign_risk,
-               risky_lvls,
-               default="Low",
-          )
+     score["risk_level"]=np.select(
+          assign_risk,
+          risky_lvls,
+          default="Low",
+     )
 
-          score=score.sort_values(
-               by="anomaly_score",
-               ascending=False,
+     score=score.sort_values(
+          by="anomaly_score",
+          ascending=False,
 
-          ).reset_index(drop=True)
+     ).reset_index(drop=True)
 
-          return score
+     return score
 
-
-def main()-> None:
-
-     logs=collect_net_logs()
-     if logs.empty:
-          print("\nNo supported authentication events were collected.")
-          return
-     try:
-          cleaned_logs=clean_logs(logs)
-          ip_sum=ip_activity(cleaned_logs)
-          score_ips=anom_score(ip_sum)
-     except ValueError as error:
-         print(f"Error: {error}")
-         return
-
-     print ("Original data:")
-     print(logs)
-
-     print("\nNumber of valid records:")
-     print(len(cleaned_logs))
-
-     print("\nCleaned data:")
-     print(cleaned_logs)
-
-     print("\nColumn data types:")
-     for column, data_type in cleaned_logs.dtypes.items():
-         print (f"{column}: {data_type}")
-
-     print("\nIP address summary:")
-     print(ip_sum)
-
-     print("\nAnomaly results:")
-     print(score_ips)
-
-
-
-if __name__=="__main__":
-     main()
 
 
 

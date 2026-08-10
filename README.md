@@ -29,6 +29,13 @@ The logs covert to the following format for analysis:
 - ip_address
 - status (accepts success or failed)
 
+## Running the Dashboard
+
+Start the Streamlit application with:
+```bash
+streamlit run dashboard.py
+```
+
 ## Note
 
 Project is still under development rn... 
