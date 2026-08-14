@@ -1,7 +1,5 @@
-import streamlit as st 
-
-from analyzer import(clean_logs,ip_activity,anom_score)
-
+import streamlit as st
+from analyzer import anom_score, clean_logs, ip_activity
 from net_logs import SyslogCollector
 
 st.set_page_config(

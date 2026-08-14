@@ -2,6 +2,7 @@ import re
 import socket
 import threading
 from datetime import datetime
+
 import pandas as pd
 
 HOST="0.0.0.0"
@@ -83,7 +84,7 @@ class SyslogCollector:
                 else:
                     print("Log received but not a supported authentication event.\n")
 
-            except socket.timeout:
+            except TimeoutError:
                 continue
 
             except OSError:
