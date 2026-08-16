@@ -68,6 +68,33 @@ def ip_activity(logs:pd.DataFrame)->pd.DataFrame:
      analysis["hour"]=analysis["timestamp"].dt.hour
      analysis["off_hours"]=((analysis["hour"]<6)|(analysis["hour"]>=22).astype(int))
 
+     #detects amount of failures from an IP
+     analysis=analysis.sort_vals("timestamp")
+
+     #failed attempts
+     logs_failed=analysis[analysis["status"]=="failed"].copy()
+
+     if not logs_failed.empty:
+          logs_failed["failed_5min"]=(
+               logs_failed
+               .set_index("timestamp")
+               .groupby("ip_address")["failed"]
+               .rolling("5min")
+               .sum()
+               .reset_index(level=0,drop=True)
+          )
+          failure_sum=(
+               logs_failed.groupby("ip_address")["failed_5min"].max().reset_index()
+          )
+          failure_sum=failure_sum.rename(
+               cols={"failed_5min" : "max_failed_5min"}
+          )
+     else:
+          failure_sum=pd.DataFrame(
+               cols=["ip_address", "max_failed_5min",
+               ]
+          )
+
      ip_sum= (
           analysis.groupby(["ip_address","date"],as_index=False).agg(
                total_attempts=("status", "size"),
@@ -76,11 +103,35 @@ def ip_activity(logs:pd.DataFrame)->pd.DataFrame:
                off_time_attempts=("off_hours", "sum"),
           )
      )
+     #attempt info
+     ip_sum=ip_sum.merge(
+          failure_sum,
+          on="ip_address",
+          how="left",
+     )
+     ip_sum["max_failed_5min"]=(ip_sum["max_failed_5min"].fillna(0))
+
      ip_sum["failure_rate"]=(
           ip_sum["failed_attempts"]/ip_sum["total_attempts"]*100
      ).round(1)
-     
+
+     #brute-force detection
+     ip_sum["brute_force_potential"]=(ip_sum["max_failed_5min"]>=5&(ip_sum["unique_users"]<=2))
+     #password spaying detection
+     ip_sum["password_spay_potential"]=(ip_sum["failed_attempts"]>=5&(ip_sum["unique_users"]>=5))
+
      return ip_sum
+
+def non_neg_score(values: pd.Series)->np.ndarray:
+     nums=values.to_numpy(dtype=float)
+     avg=np.mean(nums)
+     std=np.std(nums)
+
+     if std==0:
+          return np.zeros(len(nums))
+     score=(nums-avg)/std
+
+     return np.maximum(score,0)
 
 def anom_score(ip_sum: pd.DataFrame)-> pd.DataFrame:
      score=ip_sum.copy()
@@ -90,40 +141,42 @@ def anom_score(ip_sum: pd.DataFrame)-> pd.DataFrame:
           score["risk_level"]=pd.Series(dtype="string")
           return score
 
-     failures=score["failed_attempts"].to_numpy(dtype=float)
+     fails_score=non_neg_score(score["failed_attempts"])
+     sus_users=non_neg_score(score["unique_users"])
+     fast_score=non_neg_score(score["max_failed_5min"])
+     sus_hour_score=non_neg_score(score["off_hour_attempts"])
 
-     avg_failures=np.mean(failures)
-     failure_std=np.std(failures)
-
-     if failure_std == 0:
-          score["anomaly_score"]=0.0
-     else:
-          score["anomaly_score"]=(
-               score["failed_attempts"]-avg_failures
-          ) / failure_std
-
-     score["suspicious"]=(
-          score["anomaly_score"]>=1.5
+     #total score
+     score["anomaly_score"]=(
+          fails_score+(sus_users*0.75)+fast_score+(sus_hour_score*0.50).round(2)
      )
-     assign_risk=[
-          score["anomaly_score"]>=2.0,
+
+     score.loc[score["brute_force_potential"], "anomaly_score"]+=1.0
+
+     score.loc[score["password_spray_potential"], "anomaly_score"]+=1.0
+
+     score["suspicious"]=(score["anomaly_score"]>=1.5)
+
+     conditions=[
+          score["anomaly_score"]>=3.0,
           score["anomaly_score"]>=1.5,
      ]
-     risky_lvls=["High","Medium"]
-
+     lvls=[
+          "High",
+          "Medium",
+     ]
      score["risk_level"]=np.select(
-          assign_risk,
-          risky_lvls,
+          conditions,
+          lvls,
           default="Low",
      )
 
-     score=score.sort_values(
+     #most sus goes first
+     return score.sort_values(
           by="anomaly_score",
           ascending=False,
-
      ).reset_index(drop=True)
 
-     return score
 
 
 

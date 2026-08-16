@@ -21,6 +21,8 @@ def auth_log(message:str,ip_add:str)->dict | None:
         "username":fail_login.group("username"),
         "ip_address":fail_login.group("ip"),
         "status": "failed",
+        "event_type":"ssh_login",
+        "source_ip": ip_add,
 
     }
 
@@ -36,6 +38,8 @@ def auth_log(message:str,ip_add:str)->dict | None:
         "username":success_login.group("username"),
         "ip_address":success_login.group("ip"),
         "status":"success",
+        "event_type":"ssh_login",
+        "source_ip": ip_add,
     }
     return None
 
