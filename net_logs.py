@@ -43,6 +43,65 @@ def auth_log(message:str,ip_add:str)->dict | None:
     }
     return None
 
+def firewall_logs(message:str, source_ip: str)->dict | None:
+    block=re.search(
+        r"(?:BLOCK|DROP).*?"
+        r"SRC=(?P<ip>\d{1,3}(?:\.\d{1,3}){3}).*?"
+        r"DPT=(?P<port>\d+)",
+        message,
+        re.IGNORECASE
+    )
+
+    if block:
+        return{
+            "timestamp":datetime.now(),
+            "username":"unknown",
+            "ip_address": block.group("ip"),
+            "status":"blocked",
+            "event_type":"firewall_block",
+            "destination_port":int(block.group("port")),"source_ip":source_ip,
+        }
+    return None
+
+def vpn_logs(message:str, source_ip: str)->dict | None:
+    fail_vpn=re.search(
+        r"VPN authentication failed for "
+        r"(?P<username>\S+ from "
+        r"(?P<ip>\d{1,3}(?:\.\d{1,3}){3}).*?",
+        message,
+        re.IGNORECASE,
+    )
+
+    if fail_vpn:
+        return{
+            "timestamp":datetime.now(),
+            "username": fail_vpn.grounp("username"),
+            "ip_address": fail_vpn.group("ip"),
+            "status":"failed",
+            "event_type":"vpn_login",
+            "source_ip": source_ip,
+        }
+    success_vpn=re.search(
+        r"VPN authentication successful for "
+        r"(?P<username>\S+ from "
+        r"(?P<ip>\d{1,3}(?:\.\d{1,3}){3}).*?",
+        message,
+        re.IGNORECASE,
+    )
+    if success_vpn:
+        return {
+            "timestamp":datetime.now(),
+            "username": success_vpn.grounp("username"),
+            "ip_address": success_vpn.group("ip"),
+            "status":"success",
+            "event_type":"vpn_login",
+            "source_ip": source_ip,
+        }
+    
+    return None
+
+
+
 #network listener and collects events
 class SyslogCollector:
     def __init__(self):
