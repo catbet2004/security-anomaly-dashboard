@@ -10,37 +10,41 @@ PORT=5514
 #convert messages format
 def auth_log(message:str,ip_add:str)->dict | None:
     fail_login=re.search(
-        r"Failed password for(?:invalid user)? "
+        r"Failed password for(?: invalid user)? "
         r"(?P<username>\S+) from "
-        r"(?P<ip>\d{1,3}(?:.\d{1,3}){3})", message,
+        r"(?P<ip>\d{1,3}(?:.\d{1,3}){3})", 
+        message,
         re.IGNORECASE,    
     )
 
-    if fail_login: return {
-        "timestamp":datetime.now(),
-        "username":fail_login.group("username"),
-        "ip_address":fail_login.group("ip"),
-        "status": "failed",
-        "event_type":"ssh_login",
-        "source_ip": ip_add,
+    if fail_login: 
+        return {
+            "timestamp":datetime.now(),
+            "username":fail_login.group("username"),
+            "ip_address":fail_login.group("ip"),
+            "status": "failed",
+            "event_type":"ssh_login",
+            "source_ip": ip_add,
 
-    }
+        }
 
     success_login=re.search(
-        r"Accepted(?:password|publickey) for "
+        r"Accepted (?:password|publickey) for "
         r"(?P<username>\S+) from "
-        r"(?P<ip>\d{1,3}(?:\.\d{1.3}){3})", message,
+        r"(?P<ip>\d{1,3}(?:\.\d{1,3}){3})", 
+        message,
         re.IGNORECASE,
     )
     
-    if success_login: return{
-        "timestamp":datetime.now(),
-        "username":success_login.group("username"),
-        "ip_address":success_login.group("ip"),
-        "status":"success",
-        "event_type":"ssh_login",
-        "source_ip": ip_add,
-    }
+    if success_login: 
+        return{
+            "timestamp":datetime.now(),
+            "username":success_login.group("username"),
+            "ip_address":success_login.group("ip"),
+            "status":"success",
+            "event_type":"ssh_login",
+            "source_ip": ip_add,
+        }
     return None
 
 def firewall_logs(message:str, source_ip: str)->dict | None:
@@ -66,8 +70,8 @@ def firewall_logs(message:str, source_ip: str)->dict | None:
 def vpn_logs(message:str, source_ip: str)->dict | None:
     fail_vpn=re.search(
         r"VPN authentication failed for "
-        r"(?P<username>\S+ from "
-        r"(?P<ip>\d{1,3}(?:\.\d{1,3}){3}).*?",
+        r"(?P<username>\S+) from "
+        r"(?P<ip>\d{1,3}(?:\.\d{1,3}){3})",
         message,
         re.IGNORECASE,
     )
@@ -75,7 +79,7 @@ def vpn_logs(message:str, source_ip: str)->dict | None:
     if fail_vpn:
         return{
             "timestamp":datetime.now(),
-            "username": fail_vpn.grounp("username"),
+            "username": fail_vpn.group("username"),
             "ip_address": fail_vpn.group("ip"),
             "status":"failed",
             "event_type":"vpn_login",
@@ -83,15 +87,15 @@ def vpn_logs(message:str, source_ip: str)->dict | None:
         }
     success_vpn=re.search(
         r"VPN authentication successful for "
-        r"(?P<username>\S+ from "
-        r"(?P<ip>\d{1,3}(?:\.\d{1,3}){3}).*?",
+        r"(?P<username>\S+) from "
+        r"(?P<ip>\d{1,3}(?:\.\d{1,3}){3})",
         message,
         re.IGNORECASE,
     )
     if success_vpn:
         return {
             "timestamp":datetime.now(),
-            "username": success_vpn.grounp("username"),
+            "username": success_vpn.group("username"),
             "ip_address": success_vpn.group("ip"),
             "status":"success",
             "event_type":"vpn_login",
@@ -100,6 +104,54 @@ def vpn_logs(message:str, source_ip: str)->dict | None:
     
     return None
 
+def web_serve(message: str, source_ip:str)->dict | None:
+    web_req=re.search(
+        r"(?P<ip>\d{1,3}(?:\.\d{1,3}){3})"
+        r".*?"
+        r"(?P<method>GET|POST|PUT|DELETE|PATCH)"
+        r"\s+(?P<path>\S+)"
+        r".*?"
+        r"(?P<status_code>\d{3})",
+        message,
+        re.IGNORECASE,
+
+    )
+    if web_req:
+        stat_code=int(
+            web_req.group("status_code")
+        )
+        if stat_code in [401,403]:
+            status="failed"
+        else:
+            status="success"
+        return {
+            "timestamp":datetime.now(),
+            "username": "unknown",
+            "ip_address": web_req.group("ip"),
+            "status": status,
+            "event_type":"web_request",
+            "source_code": stat_code,
+            "source_ip": source_ip,
+
+
+        }
+    
+    return None
+
+def dispatch_logs(message:str, source_ip:str)->dict| None:
+    funcs=[
+        auth_log,
+        firewall_logs,
+        vpn_logs,
+        web_serve,
+    ]
+    for functions in funcs:
+        result=functions(message,source_ip)
+
+        if result is not None:
+            return result
+
+    return None 
 
 
 #network listener and collects events
