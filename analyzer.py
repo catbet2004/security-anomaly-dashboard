@@ -69,7 +69,7 @@ def ip_activity(logs:pd.DataFrame)->pd.DataFrame:
      analysis["off_hours"]=((analysis["hour"]<6)|(analysis["hour"]>=22).astype(int))
 
      #detects amount of failures from an IP
-     analysis=analysis.sort_vals("timestamp")
+     analysis=analysis.sort_values("timestamp")
 
      #failed attempts
      logs_failed=analysis[analysis["status"]=="failed"].copy()
@@ -87,11 +87,11 @@ def ip_activity(logs:pd.DataFrame)->pd.DataFrame:
                logs_failed.groupby("ip_address")["failed_5min"].max().reset_index()
           )
           failure_sum=failure_sum.rename(
-               cols={"failed_5min" : "max_failed_5min"}
+               columns={"failed_5min" : "max_failed_5min"}
           )
      else:
           failure_sum=pd.DataFrame(
-               cols=["ip_address", "max_failed_5min",
+               columns=["ip_address", "max_failed_5min",
                ]
           )
 
@@ -100,7 +100,7 @@ def ip_activity(logs:pd.DataFrame)->pd.DataFrame:
                total_attempts=("status", "size"),
                failed_attempts=("failed", "sum"),
                unique_users=("username","nunique"),
-               off_time_attempts=("off_hours", "sum"),
+               off_hour_attempts=("off_hours", "sum"),
           )
      )
      #attempt info
@@ -118,7 +118,7 @@ def ip_activity(logs:pd.DataFrame)->pd.DataFrame:
      #brute-force detection
      ip_sum["brute_force_potential"]=(ip_sum["max_failed_5min"]>=5&(ip_sum["unique_users"]<=2))
      #password spaying detection
-     ip_sum["password_spay_potential"]=(ip_sum["failed_attempts"]>=5&(ip_sum["unique_users"]>=5))
+     ip_sum["password_spray_potential"]=(ip_sum["failed_attempts"]>=5&(ip_sum["unique_users"]>=5))
 
      return ip_sum
 
