@@ -12,15 +12,23 @@ A Python-based security log analysis designed to process authentication records 
 ```bash
 pip install pandas numpy streamlit
 ```
-## Usage 
 
-Now uses a Syslog listener to receive authenication logs from authorized devices 
-on the network.
+## Current Features (more to come)
 
-Supported authentication logs:
-
-- Failed SSH logins
-- Successful SSH logins
+- Live Syslog listener on UDP port 5514
+- SSH login monitoring
+- VPN login monitoring
+- Firewall event monitoring
+- Web request monitoring
+- Failed and successful login detection
+- Brute-force detection
+- Password-spraying detection
+- Rapid login attempt detection
+- Off-hours activity tracking
+- Anomaly scoring by IP 
+- Low, Medium, High risk levels
+- Live event filtering and security charts 
+- IP investigation and event history 
 
 The logs covert to the following format for analysis:
 
@@ -28,6 +36,8 @@ The logs covert to the following format for analysis:
 - username
 - ip_address
 - status (accepts success or failed)
+- event_type
+- source_ip
 
 ## Running the Dashboard
 
@@ -39,3 +49,6 @@ streamlit run dashboard.py
 ## Note
 
 Project is still under development rn... 
+
+
+
