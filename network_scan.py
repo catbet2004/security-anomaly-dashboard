@@ -28,7 +28,7 @@ REVIEW_PORTS={
     5900: "VNC exposed",
 }
 
-#find ip
+#find ip 
 def get_ip()->str:
     sock=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
@@ -51,7 +51,7 @@ def get_ip()->str:
 #find subnet
 
 def get_network():
-    local_ip=get_prim_ip()
+    local_ip=get_ip()
     for addresses in psutil.net_if_addrs().values():
         for address in addresses:
             if(
@@ -60,6 +60,10 @@ def get_network():
             ):
                 network=ipaddress.ip_network(f"{local_ip}/{address.netmask}",strict=False
                 )
+
+                print("Detected local IP:", local_ip)
+                print("Detected network:", network)
+                print("Is private:", network.is_private)
 
                 if not network.is_private:
                     raise ValueError("Automatic scanning is limited to private local networks.")
@@ -113,4 +117,113 @@ def check_connections(ip_address:str, port: int)->bool:
 
     finally:
         sock.close()
+
+def check_TCP(ip_address:str, port:int)->bool:
+    sock=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(0.2)
+
+    try:
+        result=sock.connect_ex(
+            ip_address,port,
+        )
+        return result==0
+    
+    finally:
+        sock.close()
+
+def scan_services(ip_address:str)->dict | None:
+    open_ports=[]
+    for port, service in COMMON_PORTS.items():
+        if check_TCP(ip_address, port):
+            open_ports.append(
+                {
+                "port":port,
+                "service":service,
+                }
+            )
+
+    #detect port if ping blocked
+
+    alive=(ping_response(ip_address)or len(open_ports)>0)
+
+    if not alive:
+        return None
+
+    port_nums=[
+        item["port"] for item in open_ports
+    ]
+
+    services=[
+        item["service"] for item in open_ports
+    ]
+
+    findings=[]
+
+    for port in port_nums:
+        if port in REVIEW_PORTS:
+            findings.append(REVIEW_PORTS[port])
+
+    if findings:
+        attention="Review"
+    else:
+        attention="Normal"
+    return{
+        "ip_address": ip_address,
+        "open_ports": ", ".join(str(port) for port in port_nums),
+        "services":", ".join(services),
+        "attention": attention,
+        "findings": ", ".join(findings),
+    }
+
+def perform_network_scan():
+    local_ip, network= get_network()
+
+    addresses=[str(ip) for ip in network.hosts()]
+
+    devices=[]
+
+    #scans multiple addresses at once 
+    with ThreadPoolExecutor(max_workers=32) as executor:
+        futures={
+            executor.submit(scan_device, ip_address): ip_address
+
+            for ip_address in addresses
+
+        }
+
+        for future in as_completed(futures):
+            try:
+                result=future.result()
+
+                if result is not None:
+                    devices.append(result)
+
+            except OSError:
+                continue
+
+    devices=sorted(
+        devices,
+        key=lambda device: 
+        ipaddress.ip_address(
+            device["ip_address"]
+        ),
+    )
+
+    return(
+        pd.DataFrame(devices),
+        local_ip,
+        str(network),
+    )  
+
+#test
+if __name__=="__main__":
+    devices, local_ip, network=(perform_network_scan())
+
+    print(f"Local IP: {local_ip}")   
+
+    print(f"Network: {network}")
+
+    print(devices)
+
+
 
