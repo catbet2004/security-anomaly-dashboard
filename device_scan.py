@@ -2,9 +2,9 @@ import ipaddress
 import platform
 import socket
 import subprocess 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 import psutil
+
 
 #check services
 COMMON_PORTS={
@@ -28,50 +28,68 @@ REVIEW_PORTS={
     5900: "VNC exposed",
 }
 
+
 #find ip 
-def get_ip()->str:
-    sock=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+def get_ip()->tuple[str,str]:
+    
+    ignore_these=(
+        "bridge",
+        "utun",
+        "docker",
+        "veth",
+        "vmnet",
+        "lo",
+        "tailscale",
+    )
 
-    try:
-        sock.connect(("8.8.8.8",80))
-        return sock.getsockname()[0]
-    except OSError:
-        for address in psutil.net_if_addrs().values():
-            for address in addresses:
-                if(
-                    address.family==socket.AF_INET and not address.address.startswith("127.")
-                    and address.netmask
-                ):
-                    return address.address
+    for interface, addresses in psutil.net_if_addrs().items():
 
-        raise RuntimeError("Could not determine this device's IP address.")
-    finally:
-        sock.close()
+        if interface.lower().startswith(ignore_these):
+            continue
+
+        stats=psutil.net_if_stats().get(interface)
+
+        if stats is None or not stats.isup:
+            continue
+
+        for address in addresses:
+            if (address.family == socket.AF_INET 
+                and not address.address.startswith("127.") 
+                and address.netmask
+            ):
+                
+                print("Using physical interface:", interface)
+                print("Local IP:", address.address)
+
+                return interface, address.address
+            
+    raise RuntimeError("Could not find an active physical network interface.")
+                
+            
 
 #find subnet
 
-def get_network():
-    local_ip=get_ip()
-    for addresses in psutil.net_if_addrs().values():
-        for address in addresses:
-            if(
-                address.family==socket.AF_INET and address.address==local_ip
-                and address.netmask
-            ):
-                network=ipaddress.ip_network(f"{local_ip}/{address.netmask}",strict=False
-                )
+def get_subnet():
+    interface, local_ip=get_ip()
 
+    addresses=psutil.net_if_addrs()[interface]
+
+    for address in addresses:
+                if(
+                    address.family==socket.AF_INET
+                    and address.address==local_ip
+                    and address.netmask
+                ):
+                    network=ipaddress.ip_network(f"{local_ip}/{address.netmask}", strict=False)
+
+                print("Detected interface:", interface)
                 print("Detected local IP:", local_ip)
                 print("Detected network:", network)
-                print("Is private:", network.is_private)
 
-                if not network.is_private:
-                    raise ValueError("Automatic scanning is limited to private local networks.")
-                if network.num_addresses>256:
-                    raise ValueError("The detected network contains more than 256 addresses. Automatic scan stopped.")
-
+                
                 return local_ip, network
-    raise RuntimeError("Could not determine the local subnet.")
+    raise RuntimeError("Could not determine the network.")
+
 
 def ping_response(ip_address:str)->bool:
     system=platform.system()
@@ -123,9 +141,8 @@ def check_TCP(ip_address:str, port:int)->bool:
     sock.settimeout(0.2)
 
     try:
-        result=sock.connect_ex(
-            ip_address,port,
-        )
+        result=sock.connect_ex((ip_address,port))
+
         return result==0
     
     finally:
@@ -142,12 +159,6 @@ def scan_services(ip_address:str)->dict | None:
                 }
             )
 
-    #detect port if ping blocked
-
-    alive=(ping_response(ip_address)or len(open_ports)>0)
-
-    if not alive:
-        return None
 
     port_nums=[
         item["port"] for item in open_ports
@@ -175,53 +186,41 @@ def scan_services(ip_address:str)->dict | None:
         "findings": ", ".join(findings),
     }
 
-def perform_network_scan():
-    local_ip, network= get_network()
+def perform_device_scan():
+    interface, local_ip= get_ip()
 
-    addresses=[str(ip) for ip in network.hosts()]
+    print("Scanning your device...")
+    print("Interface:", interface)
+    print("Device IP:", local_ip)
 
-    devices=[]
+    result=scan_services(local_ip)
 
-    #scans multiple addresses at once 
-    with ThreadPoolExecutor(max_workers=32) as executor:
-        futures={
-            executor.submit(scan_device, ip_address): ip_address
+    if result is None:
+        devices=[]
+    else:
+        devices=[result]
 
-            for ip_address in addresses
+    device_cols=[
+        "ip_address",
+        "open_ports",
+        "services",
+        "attention",
+        "findings",
+    ]
 
-        }
+    device_df=pd.DataFrame(devices,columns=device_cols)
 
-        for future in as_completed(futures):
-            try:
-                result=future.result()
+    return(device_df, local_ip, interface)
 
-                if result is not None:
-                    devices.append(result)
-
-            except OSError:
-                continue
-
-    devices=sorted(
-        devices,
-        key=lambda device: 
-        ipaddress.ip_address(
-            device["ip_address"]
-        ),
-    )
-
-    return(
-        pd.DataFrame(devices),
-        local_ip,
-        str(network),
-    )  
+    
 
 #test
 if __name__=="__main__":
-    devices, local_ip, network=(perform_network_scan())
+    devices, local_ip, interface=(perform_device_scan())
 
     print(f"Local IP: {local_ip}")   
 
-    print(f"Network: {network}")
+    print(f"Interface: {interface}")
 
     print(devices)
 
