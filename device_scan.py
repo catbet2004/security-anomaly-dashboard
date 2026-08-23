@@ -214,15 +214,5 @@ def perform_device_scan():
 
     
 
-#test
-if __name__=="__main__":
-    devices, local_ip, interface=(perform_device_scan())
-
-    print(f"Local IP: {local_ip}")   
-
-    print(f"Interface: {interface}")
-
-    print(devices)
-
 
 
