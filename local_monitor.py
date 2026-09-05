@@ -293,34 +293,3 @@ foreach($event in $events){
             except OSError:
                 pass
 
-if __name__ == "__main__":
-
-    monitor = LocalLogMonitor()
-
-    monitor.start_monitor()
-
-    print(
-        "Local collector started."
-    )
-
-    try:
-
-        while True:
-
-            print(
-                "\nCurrent local events:"
-            )
-
-            print(
-                monitor.return_logs()
-            )
-
-            time.sleep(5)
-
-    except KeyboardInterrupt:
-
-        monitor.stop_run()
-
-        print(
-            "\nLocal collector stopped."
-        )
