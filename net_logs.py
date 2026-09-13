@@ -3,6 +3,7 @@ import socket
 import threading
 from datetime import datetime
 import pandas as pd
+from store_events import save_security_event
 
 HOST="0.0.0.0"
 PORT=5514 
@@ -165,6 +166,12 @@ class SyslogCollector:
             socket.SOCK_DGRAM, #use UDP 
         )
 
+        self.net_sock.setsockopt(
+            socket.SOL_SOCKET,
+            socket.SO_REUSEADDR,
+            1,
+        )
+
         self.net_sock.settimeout(1.0)
 
         self.net_sock.bind((HOST,PORT))
@@ -192,9 +199,13 @@ class SyslogCollector:
                 message_support=auth_log(message,ip_add)
 
                 if message_support is not None:
+                    message_support["log_source"]="remote_syslog"
+
                     with self.lock:
                         self.logins.append(message_support)
-                        print("Authentication event recorded.\n")
+
+                    save_security_event(message_support)
+                    print("Authentication event recorded.\n")
                 else:
                     print("Log received but not a supported authentication event.\n")
 

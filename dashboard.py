@@ -6,6 +6,9 @@ from analyzer import(clean_logs,ip_activity,anom_score)
 from net_logs import SyslogCollector
 from local_monitor import LocalLogMonitor
 from device_scan import perform_device_scan
+from store_events import initialize_database
+
+initialize_database()
 
 st.set_page_config(
     page_title="Security Monitor",
@@ -226,7 +229,7 @@ def live_results():
         else:
             filtered_events=(all_events.copy())
 
-            filter1, filter2= st.columbs(2)
+            filter1, filter2= st.columns(2)
 
             with filter1:
                 if(
@@ -412,7 +415,7 @@ def live_results():
                                 ascending=False,
                             )
                         )
-                    st.dataframe(ip_events, width="strecth")
+                    st.dataframe(ip_events, width="stretch")
 
     with device_tab:
 

@@ -8,6 +8,7 @@ import threading
 import time
 import pandas as pd
 from net_logs import auth_log
+from store_events import save_security_event
 
 class LocalLogMonitor:
     def __init__(self):
@@ -80,6 +81,8 @@ class LocalLogMonitor:
 
         with self.lock:
             self.events.append(event)
+
+        save_security_event(event)
 
     def stream_command(self, command:list[str], handler, name:str):
         try:
