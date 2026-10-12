@@ -1,0 +1,359 @@
+import pandas as pd
+
+from analyzer import(clean_logs,ip_activity,anom_score)
+
+from firewall_analysis import(analyze_firewall_activity)
+
+from web_threats import(analyze_web_activity)
+
+from store_events import (get_security_events)
+
+def create_auth_alerts(logs:pd.DataFrame)->list[dict]:
+
+    alerts=[]
+
+    if logs.empty:
+        return alerts
+
+    auth_logs=logs.copy()
+
+    if "event_type" not in auth_logs.columns:
+        return alerts
+
+    try:
+        cleaned=clean_logs(auth_logs)
+
+        activity=ip_activity(cleaned)
+
+        results=anom_score(activity)
+
+    except ValueError:
+        return alerts
+
+    for _, row in results.iterrows():
+        risk_level=row.get("risk_level", "Low")
+
+        if risk_level == "Low":
+            continue
+
+        ip_address=row.get("ip_address", "unknown")
+
+
+        #scoring
+
+        if row.get("possible_brute_force", False):
+            alerts.append(
+                {
+                    "timestamp": pd.Timestamp.now(),
+                    "severity": "High",
+                    "category": "Authentication",
+                    "title": "Possible Brute-Force Attack",
+                    "ip_address": ip_address,
+                    "description":
+                    (
+                        "Rapid failed login attempts were detected from this IP."
+                    ),
+
+                    "risk_score":
+                        row.get("anomaly_score",0),
+                }
+            )
+
+        if row.get("possible_password_spray", False):
+            alerts.append(
+                {
+                    "timestamp":pd.Timestamp.now(),
+
+                    "severity": "High",
+                    "category": "Authentication",
+                    "title": "Possible Password Spray",
+                    "ip_address": ip_address,
+                    "description":
+                    (
+                        "Failed authentication attempts were detected across multiple users."
+
+                    ),
+                    "risk_score":
+                        row.get("anomaly_score", 0),
+
+                }
+            )
+
+        if (not row.get("possible_brute_force", False)and not row.get("possible_password_spray", False)):
+
+            alerts.append(
+                {
+                    "timestamp": pd.Timestamp.now(),
+                    "severity": risk_level,
+                    "category":"Authentication",
+                    "title":"Unusual Authentication Activity",
+                    "ip_address": ip_address,
+                    "description":
+                    (
+                        "Authentication behavior exceeded the configured anomaly threshold."
+                    ),
+
+                    "risk_score":
+                        row.get("anomaly_score", 0),
+
+                }
+            )
+
+    return alerts
+
+#firewall
+
+def create_firewall_alerts(logs:pd.DataFrame)->list[dict]:
+
+    alerts=[]
+
+    results=analyze_firewall_activity(logs)
+
+    if results.empty:
+        return alerts
+
+    for _, row in results.iterrows():
+
+        ip_address=row.get("ip_address", "unknown")
+
+        #port scan
+        if row.get("possible_port_scan", False):
+            alerts.append(
+                {
+                    "timestamp": pd.Timestamp.now(),
+                    "severity": "High",
+                    "category": "Firewall",
+                    "title": "Possible Port Scan",
+                    "ip_address": ip_address,
+                    "description":
+                    (
+                        f"{row.get('unique_ports', 0)} different ports were targeted."
+                    ),
+
+                    "risk_score": 3.0,
+                    
+
+                }
+            )
+        #repeated firewall blocks
+
+        elif row.get("repeated_blocks", False):
+            alerts.append(
+                {
+                    "timestamp": pd.Timestamp.now(),
+                    "severity": "Medium",
+                    "category": "Firewall",
+                    "title": "Repeated Blocked Connections",
+                    "ip_address": ip_address,
+                    "description":
+                        (
+                            f"{row.get('max_blocks_5min',0)} blocked connections occured within five minutes."
+
+                        ),
+
+                    "risk_score": 2.0,
+
+                }
+
+            )
+
+        #port targeting
+        sensitive_ports=row.get("sensitive_ports", [])
+
+        if sensitive_ports:
+            alerts.append(
+                {
+                    "timestamp": pd.Timestamp.now(),
+                    "severity": "Medium",
+                    "category": "Firewall",
+                    "title":"Sensitive Serviice Targeted",
+                    "ip_address":ip_address,
+                    "description":
+                        (
+                            "Traffic targeted sensitive ports: " 
+                            f"{sensitive_ports}"
+
+                        ),
+                    "risk_score": 2.0,
+                }
+            )
+
+    return alerts
+
+def create_web_alerts(logs: pd.DataFrame)->list[dict]:
+    alerts=[]
+
+    results=analyze_web_activity(logs)
+
+    if results.empty:
+        return alerts
+
+    for _, row in results.iterrows():
+        ip_address=row.get("ip_address", "unknown")
+
+    #auth probing
+
+    if row.get("possible_auth_probe", False):
+
+        alerts.append(
+            {
+                "timestamp": pd.Timestamp.now(),
+                "severity": "High",
+                "category": "Web",
+                "title": "Possible Web Authentication Probe",
+                "ip_address":ip_address,
+                "description":
+                    (
+                        f"{row.get('max_failed_5min', 0)} failed web authentication requests occured within five minutes."
+
+
+                    ),
+                "risk_score": 3.0,
+
+            }
+        )
+
+        #sensitive path probing
+
+        if row.get("possible_path_probe", False):
+            alerts.append(
+                {
+                    "timestamp":pd.Timestamp.now(),
+                    "severity": "High",
+                    "category": "Web",
+                    "title": "Sensitive Web Paths Probed",
+                    "ip_address": ip_address,
+                    "description":
+                        (
+                            "Requests targeted sensitive paths: "
+                            f"{row.get('sensitive_paths', [])}"
+
+                        ),
+                    "risk_score": 3.0,
+
+                }
+            )
+
+    #404 scan
+
+        if row.get("possible_404_scan", False):
+            alerts.append(
+                {
+                    "timestamp": pd.Timestamp.now(),
+                    "severity": "Medium",
+                    "category": "Web",
+                    "title": "Possible Web Path Scan",
+                    "ip_address": ip_address,
+                    "description":
+                        (
+                            f"{row.get('not_found_requests', 0)} "
+                            "HTTP 404 responses were generated across multiple paths."
+
+                        ),
+                    "risk_score": 2.0,
+
+                }
+            )
+
+        #request rate
+
+        if row.get("high_request_rate", False):
+            alerts.append(
+                {
+                    "timestamp": pd.Timestamp.now(),
+                    "severity": "Medium",
+                    "category": "Web",
+                    "title": "High Web Request Rate",
+                    "ip_address": ip_address,
+                    "description":
+                        (
+                            f"{row.get('max_requests_1min',0)} "
+                            "requests were observed within one minute."
+
+                        ),
+                    "risk_score": 2.0,
+                }
+            )
+
+    return alerts
+
+#combine and configure alerts
+
+def generate_alerts(logs:pd.DataFrame)-> pd.DataFrame:
+
+    alerts=[]
+
+    alerts.extend(create_auth_alerts(logs))
+
+    alerts.extend(create_firewall_alerts(logs))
+
+    alerts.extend(create_web_alerts(logs))
+
+    if not alerts:
+        return pd.DataFrame(
+            columns=[
+                "timestamp",
+                "severity",
+                "category",
+                "title",
+                "ip_address",
+                "description",
+                "risk_score",
+            ]
+        )
+    alert_df=pd.DataFrame(alerts)
+
+    #high severity first
+
+    severity_order={
+        "High": 3, "Medium": 2, "Low": 1
+    }
+
+    alert_df["severity_rank"]=alert_df["severity"].map(severity_order)
+
+    alert_df=alert_df.sort_values(
+        [
+            "severity_rank",
+            "risk_score",
+        ],
+        ascending=[
+            False,
+            False,
+        ],
+    )
+
+    alert_df=alert_df.drop(columns=["severity_rank"])
+
+    return alert_df.reset_index(drop=True)
+
+if __name__ == "__main__":
+
+    logs = get_security_events()
+
+    alerts = generate_alerts(
+        logs
+    )
+
+    pd.set_option(
+        "display.max_columns",
+        None,
+    )
+
+    print(
+        "\nSecurity Alerts:"
+    )
+
+    if alerts.empty:
+
+        print(
+            "No security alerts detected."
+        )
+
+    else:
+
+        print(
+            alerts
+        )
+
+
+

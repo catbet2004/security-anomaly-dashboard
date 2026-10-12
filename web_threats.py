@@ -159,3 +159,4 @@ def analyze_web_activity (logs:pd.DataFrame)->pd.DataFrame:
             )
 
     return pd.DataFrame(results)
+
