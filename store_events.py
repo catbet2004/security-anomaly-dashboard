@@ -16,6 +16,67 @@ def get_connection():
 
     return connection
 
+def migrate_alert_table(connection):
+    columns={
+        row[1] 
+        for row in connection.execute(
+            """
+            PRAGMA table_info(security_alerts)
+            """
+        ).fetchall()
+    }
+
+    if "first_seen" not in columns:
+        connection.execute(
+            """
+            ALTER TABLE security_alerts
+            ADD COLUMN first_seen TEXT
+            """
+        )
+    if "last_seen" not in columns:
+        connection.execute(
+            """
+            ALTER TABLE security_alerts
+            ADD COLUMN last_seen TEXT
+            """
+        )
+    if "occurrence_count" not in columns:
+        connection.execute(
+            """
+            ALTER TABLE security_alerts
+            ADD COLUMN occurrence_count
+            INTEGER NOT NULL DEFAULT 1
+            """
+        )
+    if "status" not in columns:
+        connection.execute(
+            """ 
+            ALTER TABLE security_alerts
+            ADD COLUMN status TEXT 
+            DEFAULT 'Active'
+            """
+        )
+    connection.execute(
+        """
+        UPDATE security_alerts
+        SET
+            first_seen=
+                COALESCE(first_seen, timestamp),
+
+            last_seen=
+                COALESCE(last_seen, timestamp),
+
+            occurrence_count=
+                COALESCE(occurrence_count, 1),
+
+            status=
+                COALESCE(status, 'Active')
+
+
+        """
+    )
+        
+
 def initialize_database():
     with get_connection() as connection:
         connection.execute(
@@ -45,7 +106,27 @@ def initialize_database():
                 title TEXT NOT NULL,
                 ip_address TEXT,
                 description TEXT,
-                risk_score REAL
+                risk_score REAL,
+                first_seen TEXT,
+                last_seen TEXT,
+                occurrence_count INTEGER
+                    NOT NULL DEFAULT 1,
+                status TEXT
+                    NOT NULL DEFAULT 'Active'
+            )
+            """
+        )
+        migrate_alert_table(connection)
+
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_security_lookup
+
+            ON security_alerts(
+                category,
+                title,
+                ip_address,
+                status
             )
             """
         )
@@ -121,38 +202,101 @@ def get_security_events():
         )
     return events
 
-def save_security_alert(alert:dict):
-
+def save_or_update_alert(alert:dict):
     initialize_database()
 
     timestamp=alert.get("timestamp", pd.Timestamp.now())
 
+    severity=alert.get("severity", "Low")
+
+    category=alert.get("category", "Unknown")
+
+    title=alert.get("title", "Unknown Alert")
+
+    ip_address=alert.get("ip_address")
+
+    description=alert.get("description")
+
+    risk_score=alert.get("risk_score", 0)
+
     with get_connection() as connection:
+        exisiting_alert=connection.execute(
+            """
+            SELECT id, occurrence_count
+            FROM security_alerts
+            WHERE category = ? AND title = ?
+            AND COALESCE(ip_address, '') = COALESCE (?, '')
+            AND status='Active'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (
+                category, title, ip_address,
+            ),
+        ).fetchone()
+
+        if exisiting_alert is not None:
+            alert_id=exisiting_alert[0]
+            connection.execute(
+                """
+                UPDATE security_alerts
+                SET 
+                    timestamp = ?,
+                    last_seen=?,
+                    severity=?,
+                    description=?,
+                    risk_score=?,
+                    occurrence_count= occurrence_count + 1
+                WHERE id = ?
+                """,
+                (
+                    str(timestamp),
+                    str(timestamp),
+                    severity,
+                    description,
+                    risk_score,
+                    alert_id,
+                ),
+            )
+
+            return "updated"
 
         connection.execute(
             """
             INSERT INTO security_alerts(
                 timestamp,
+                first_seen,
+                last_seen,
                 severity,
                 category,
                 title,
                 ip_address,
                 description,
-                risk_score
+                risk_score,
+                occurrence_count,
+                status
             )
-            VALUES(?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 str(timestamp),
-                alert.get("severity"),
-                alert.get("category"),
-                alert.get("title"),
-                alert.get("ip_address"),
-                alert.get("description"),
-                alert.get("risk_score"),
-
+                str(timestamp),
+                str(timestamp),
+                severity,
+                category,
+                title,
+                ip_address,
+                description,
+                risk_score,
+                1,
+                "Active",
             ),
         )
+        return "inserted"
+
+def save_security_alert(alert:dict):
+
+    return save_or_update_alert(alert)
 
 def get_security_alerts():
 
@@ -170,46 +314,4 @@ def get_security_alerts():
 
     return alerts
 
-def alert_exists(title:str, ip_address:str, minutes: int=10) -> bool:
 
-    initialize_database()
-
-    with get_connection() as connection:
-
-        result=connection.execute(
-            """
-            SELECT COUNT(*)
-            FROM security_alerts
-            WHERE title=?
-            AND ip_address=?
-            AND datatime(timestamp) >= datetime('now', ?)
-            """,
-            (
-                title,
-                ip_address,
-                f"-{minutes} minutes",
-            ),
-        ).fetchone()
-
-    return result[0] > 0
-
-if __name__ == "__main__":
-
-    test_alert = {
-        "timestamp": pd.Timestamp.now(),
-        "severity": "High",
-        "category": "Firewall",
-        "title": "Test Security Alert",
-        "ip_address": "10.0.0.99",
-        "description": "Testing alert storage.",
-        "risk_score": 3.0,
-    }
-
-    save_security_alert(
-        test_alert
-    )
-
-    print(
-        get_security_alerts()
-    )
-        
