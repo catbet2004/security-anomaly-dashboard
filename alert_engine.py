@@ -6,7 +6,7 @@ from firewall_analysis import(analyze_firewall_activity)
 
 from web_threats import(analyze_web_activity)
 
-from store_events import (get_security_events)
+from store_events import (get_security_events, save_security_alert, get_security_alerts, alert_exists)
 
 def create_auth_alerts(logs:pd.DataFrame)->list[dict]:
 
@@ -27,21 +27,26 @@ def create_auth_alerts(logs:pd.DataFrame)->list[dict]:
 
         results=anom_score(activity)
 
+
+
+
     except ValueError:
         return alerts
 
     for _, row in results.iterrows():
         risk_level=row.get("risk_level", "Low")
 
-        if risk_level == "Low":
-            continue
 
         ip_address=row.get("ip_address", "unknown")
+
+        brute_force=row.get("brute_force_potential", False)
+
+        password_spray=row.get("password_spray_potential", False)
 
 
         #scoring
 
-        if row.get("possible_brute_force", False):
+        if brute_force:
             alerts.append(
                 {
                     "timestamp": pd.Timestamp.now(),
@@ -59,7 +64,7 @@ def create_auth_alerts(logs:pd.DataFrame)->list[dict]:
                 }
             )
 
-        if row.get("possible_password_spray", False):
+        if password_spray:
             alerts.append(
                 {
                     "timestamp":pd.Timestamp.now(),
@@ -79,7 +84,7 @@ def create_auth_alerts(logs:pd.DataFrame)->list[dict]:
                 }
             )
 
-        if (not row.get("possible_brute_force", False)and not row.get("possible_password_spray", False)):
+        if (not brute_force and not password_spray and risk_level !="Low"):
 
             alerts.append(
                 {
@@ -326,34 +331,33 @@ def generate_alerts(logs:pd.DataFrame)-> pd.DataFrame:
 
     return alert_df.reset_index(drop=True)
 
-if __name__ == "__main__":
-
-    logs = get_security_events()
-
-    alerts = generate_alerts(
-        logs
-    )
-
-    pd.set_option(
-        "display.max_columns",
-        None,
-    )
-
-    print(
-        "\nSecurity Alerts:"
-    )
+def store_generated_alerts(alerts: pd.DataFrame):
 
     if alerts.empty:
+        return
 
-        print(
-            "No security alerts detected."
-        )
+    for _, row in alerts.iterrows():
 
-    else:
+        alert=row.to_dict()
 
-        print(
-            alerts
-        )
+        title=alert.get("title")
+
+        ip_address=alert.get("ip_address")
+
+        if alert_exists(title, ip_address, minutes=10):
+            print(f"Duplicate alert skipped: "
+                  f"{title} - {ip_address}")
+            continue
+
+        save_security_alert(alert)
+
+        print(f"Alert saved: "
+              f"{title} - {ip_address}")
+
+
+
+
+
 
 
 

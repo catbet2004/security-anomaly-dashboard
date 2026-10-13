@@ -13,9 +13,9 @@ def load_logs(file_path:str)->pd.DataFrame:
         raise ValueError(
             f"File not found: {file_path}"
         ) from error
-    except pd.error.EmptyDataError as error:
+    except pd.errors.EmptyDataError as error:
             raise ValueError("The CSV file is empty.") from error
-    except pd.error.ParserError as error:
+    except pd.errors.ParserError as error:
          raise ValueError("The file could not be read.") from error
     return logs
 
@@ -66,7 +66,8 @@ def ip_activity(logs:pd.DataFrame)->pd.DataFrame:
      #mark login attempts during sus times
      analysis["date"]=analysis["timestamp"].dt.date
      analysis["hour"]=analysis["timestamp"].dt.hour
-     analysis["off_hours"]=((analysis["hour"]<6)|(analysis["hour"]>=22).astype(int))
+     analysis["off_hours"]=(((analysis["hour"]<6)|(analysis["hour"]>=22)).astype(int))
+
 
      #detects amount of failures from an IP
      analysis=analysis.sort_values("timestamp")
@@ -75,7 +76,14 @@ def ip_activity(logs:pd.DataFrame)->pd.DataFrame:
      logs_failed=analysis[analysis["status"]=="failed"].copy()
 
      if not logs_failed.empty:
-          logs_failed["failed_5min"]=(
+          logs_failed=logs_failed.sort_values(
+               [
+                    "ip_address",
+                    "timestamp",
+               ]
+          )
+
+          failed_rolling=(
                logs_failed
                .set_index("timestamp")
                .groupby("ip_address")["failed"]
@@ -83,6 +91,8 @@ def ip_activity(logs:pd.DataFrame)->pd.DataFrame:
                .sum()
                .reset_index(level=0,drop=True)
           )
+
+          logs_failed["failed_5min"]=(failed_rolling.to_numpy())
           failure_sum=(
                logs_failed.groupby("ip_address")["failed_5min"].max().reset_index()
           )
@@ -116,9 +126,9 @@ def ip_activity(logs:pd.DataFrame)->pd.DataFrame:
      ).round(1)
 
      #brute-force detection
-     ip_sum["brute_force_potential"]=(ip_sum["max_failed_5min"]>=5&(ip_sum["unique_users"]<=2))
+     ip_sum["brute_force_potential"]=((ip_sum["max_failed_5min"]>=5)&(ip_sum["unique_users"]<=2))
      #password spaying detection
-     ip_sum["password_spray_potential"]=(ip_sum["failed_attempts"]>=5&(ip_sum["unique_users"]>=5))
+     ip_sum["password_spray_potential"]=((ip_sum["failed_attempts"]>=5)&(ip_sum["unique_users"]>=5))
 
      return ip_sum
 
