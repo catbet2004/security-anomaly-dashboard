@@ -131,6 +131,16 @@ def initialize_database():
             """
         )
 
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS worker_state (
+                worker_name TEXT PRIMARY KEY,
+                last_event_id INTEGER NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
 def save_security_event(event:dict):
 
     initialize_database()
@@ -201,6 +211,85 @@ def get_security_events():
             connection,
         )
     return events
+
+def get_security_events_after_id(event_id: int):
+
+    initialize_database()
+    with get_connection() as connection:
+
+        events=pd.read_sql_query(
+            """
+            SELECT *
+            FROM security_events
+            WHERE id > ?
+            ORDER BY id ASC
+            """,
+            connection,
+            params=(event_id,),
+        )
+    return events
+
+def get_recent_events(minutes: int=10):
+    initialize_database()
+
+    cutoff=(pd.Timestamp.now() - pd.Timedelta(minutes=minutes))
+    with get_connection() as connection:
+        events=pd.read_sql_query(
+            """
+            SELECT *
+            FROM security_events
+            WHERE datetime(timestamp) >= datetime(?)
+            ORDER BY timestamp ASC
+            """,
+            connection,
+            params=(str(cutoff),
+            ),
+        )
+    return events
+
+def get_last_event_id(worker_name: str="analysis_worker"):
+    initialize_database()
+    with get_connection() as connection:
+        row=connection.execute(
+            """
+            SELECT last_event_id
+            FROM worker_state
+            WHERE worker_name=?
+            """,
+            (
+                worker_name,
+            ),
+        ).fetchone()
+    if row is None:
+        return None
+
+    return int(row[0])
+
+def save_last_event_id(event_id:int, worker_name:str="analysis_worker"):
+    initialize_database()
+    timestamp=pd.Timestamp.now()
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO worker_state (
+                worker_name,
+                last_event_id,
+                updated_at
+            )
+
+            VALUES (?, ?, ?)
+
+            ON CONFLICT(worker_name)
+            DO UPDATE SET
+                last_event_id=excluded.last_event_id,
+                updated_at=excluded.updated_at
+            """,
+            (
+                worker_name,
+                event_id,
+                str(timestamp),
+            ),
+        )
 
 def save_or_update_alert(alert:dict):
     initialize_database()
