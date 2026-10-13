@@ -1,12 +1,8 @@
 import pandas as pd
-
 from analyzer import(clean_logs,ip_activity,anom_score)
-
 from firewall_analysis import(analyze_firewall_activity)
-
 from web_threats import(analyze_web_activity)
-
-from store_events import (get_security_events, save_security_alert, get_security_alerts, alert_exists)
+from store_events import (get_security_events, get_security_alerts, save_or_update_alert)
 
 def create_auth_alerts(logs:pd.DataFrame)->list[dict]:
 
@@ -20,15 +16,23 @@ def create_auth_alerts(logs:pd.DataFrame)->list[dict]:
     if "event_type" not in auth_logs.columns:
         return alerts
 
+    auth_event_types=[
+        "ssh_login",
+        "vpn_login",
+        "windows_login",
+    ]
+
+    auth_logs=auth_logs[
+        auth_logs["event_type"].isin(auth_event_types)
+    ]
+
+    if auth_logs.empty:
+        return alerts
+
     try:
         cleaned=clean_logs(auth_logs)
-
         activity=ip_activity(cleaned)
-
         results=anom_score(activity)
-
-
-
 
     except ValueError:
         return alerts
@@ -59,8 +63,8 @@ def create_auth_alerts(logs:pd.DataFrame)->list[dict]:
                         "Rapid failed login attempts were detected from this IP."
                     ),
 
-                    "risk_score":
-                        row.get("anomaly_score",0),
+                    "risk_score": max(
+                        row.get("anomaly_score",0),3.0)
                 }
             )
 
@@ -171,7 +175,7 @@ def create_firewall_alerts(logs:pd.DataFrame)->list[dict]:
                     "timestamp": pd.Timestamp.now(),
                     "severity": "Medium",
                     "category": "Firewall",
-                    "title":"Sensitive Serviice Targeted",
+                    "title":"Sensitive Service Targeted",
                     "ip_address":ip_address,
                     "description":
                         (
@@ -198,25 +202,25 @@ def create_web_alerts(logs: pd.DataFrame)->list[dict]:
 
     #auth probing
 
-    if row.get("possible_auth_probe", False):
+        if row.get("possible_auth_probe", False):
 
-        alerts.append(
-            {
-                "timestamp": pd.Timestamp.now(),
-                "severity": "High",
-                "category": "Web",
-                "title": "Possible Web Authentication Probe",
-                "ip_address":ip_address,
-                "description":
-                    (
-                        f"{row.get('max_failed_5min', 0)} failed web authentication requests occured within five minutes."
+            alerts.append(
+                {
+                    "timestamp": pd.Timestamp.now(),
+                    "severity": "High",
+                    "category": "Web",
+                    "title": "Possible Web Authentication Probe",
+                    "ip_address":ip_address,
+                    "description":
+                        (
+                            f"{row.get('max_failed_5min', 0)} failed web authentication requests occurred within five minutes."
 
 
-                    ),
-                "risk_score": 3.0,
+                        ),
+                    "risk_score": 3.0,
 
-            }
-        )
+                }
+            )
 
         #sensitive path probing
 
@@ -334,26 +338,26 @@ def generate_alerts(logs:pd.DataFrame)-> pd.DataFrame:
 def store_generated_alerts(alerts: pd.DataFrame):
 
     if alerts.empty:
-        return
+            print("No alerts to store.")
+            return
 
     for _, row in alerts.iterrows():
 
         alert=row.to_dict()
 
-        title=alert.get("title")
+        result=save_or_update_alert(alert)
 
-        ip_address=alert.get("ip_address")
+        title=alert.get("title", "Unknown Alert")
 
-        if alert_exists(title, ip_address, minutes=10):
-            print(f"Duplicate alert skipped: "
-                  f"{title} - {ip_address}")
-            continue
+        ip_address=alert.get("ip_address", "unknown")
 
-        save_security_alert(alert)
+        if result == "inserted":
+            print(f"New alert saved: "
+                    f"{title} - {ip_address}")
 
-        print(f"Alert saved: "
-              f"{title} - {ip_address}")
-
+        elif result == "updated":
+            print(f"Existing alert updated: "
+                    f"{title} - {ip_address}")
 
 
 
