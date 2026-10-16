@@ -62,13 +62,15 @@ def analyze_firewall_activity(logs:pd.DataFrame)-> pd.DataFrame:
 
         #rapid blocks
 
+        group["block"]=1
+
         indexed=(group.set_index("timestamp").sort_index())
 
-        rapid_blocks=(indexed.rolling("5min").size())
+        rapid_blocks=indexed["block"].rolling("5min").sum()
 
         max_blocks_5min=int(rapid_blocks.max())
 
-        possible_port_scan=(unique_ports>=10 and max_blocks_5min>=20)
+        possible_port_scan=(unique_ports>=10 and max_blocks_5min>=10)
 
         repeated_blocks=(max_blocks_5min>=10)
 

@@ -82,8 +82,8 @@ def create_auth_alerts(logs:pd.DataFrame)->list[dict]:
                         "Failed authentication attempts were detected across multiple users."
 
                     ),
-                    "risk_score":
-                        row.get("anomaly_score", 0),
+                    "risk_score": max(
+                        row.get("anomaly_score", 0), 3.0)
 
                 }
             )
@@ -102,8 +102,8 @@ def create_auth_alerts(logs:pd.DataFrame)->list[dict]:
                         "Authentication behavior exceeded the configured anomaly threshold."
                     ),
 
-                    "risk_score":
-                        row.get("anomaly_score", 0),
+                    "risk_score":max(
+                        row.get("anomaly_score", 0),3.0)
 
                 }
             )
